@@ -6,6 +6,7 @@ Standalone command-line timeline renderer.
 
 Reads timestamped rows from an Excel workbook or CSV file and writes a vertical
 timeline as PNG or SVG. It can also export parsed timeline events as JSON.
+
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import is_color_like
 
 
 DEFAULT_SHEET = "Timeline"
@@ -37,11 +39,20 @@ DEFAULT_VISUALIZE_VALUE = "yes"
 
 DEFAULT_WIDTH = 14.0
 DEFAULT_MIN_HEIGHT = 8.0
-DEFAULT_HEIGHT_PER_EVENT = 0.32
+DEFAULT_HEIGHT_PER_EVENT = 1.0
 DEFAULT_DPI = 150
 
-LABEL_MAX_CHARS = 30
-DESC_DISPLAY_MAX = 80
+DEFAULT_BACKGROUND_COLOUR = "white"
+DEFAULT_LINE_COLOUR = "black"
+DEFAULT_MARKER_COLOUR = "blue"
+DEFAULT_TIMESTAMP_COLOUR = "red"
+DEFAULT_BAR_COLOUR = "darkorange"
+DEFAULT_BAR_TEXT_COLOUR = "white"
+DEFAULT_TEXT_COLOUR = "black"
+DEFAULT_TITLE_COLOUR = "black"
+
+LABEL_MAX_CHARS = 40
+DESC_DISPLAY_MAX = 300
 
 SUPPORTED_EXCEL_SUFFIXES = {".xlsx", ".xlsm", ".xltx", ".xltm"}
 SUPPORTED_IMAGE_FORMATS = {"png", "svg"}
@@ -59,6 +70,18 @@ class TimelineEvent:
     activity: str
     tactic: str
     row_number: int
+
+
+@dataclass(frozen=True)
+class TimelineColours:
+    background: str = DEFAULT_BACKGROUND_COLOUR
+    line: str = DEFAULT_LINE_COLOUR
+    marker: str = DEFAULT_MARKER_COLOUR
+    timestamp: str = DEFAULT_TIMESTAMP_COLOUR
+    bar: str = DEFAULT_BAR_COLOUR
+    bar_text: str = DEFAULT_BAR_TEXT_COLOUR
+    text: str = DEFAULT_TEXT_COLOUR
+    title: str = DEFAULT_TITLE_COLOUR
 
 
 @dataclass
@@ -169,6 +192,15 @@ def normalise_header(value: Any, index: int) -> str:
         return f"Column {index + 1}"
 
     return str(value).strip()
+
+
+def validate_colour(value: str, option_name: str) -> None:
+    if not is_color_like(value):
+        raise CliError(
+            f"{option_name} value {value!r} is not a valid Matplotlib colour. "
+            "Use a named colour such as 'red', 'black', 'darkorange', "
+            "or a hex value such as '#ff0000'."
+        )
 
 
 def load_workbook_for_metadata(path: Path):
@@ -447,91 +479,163 @@ def draw_timeline(
     height_per_event: float,
     dpi: int,
     output_format: str,
+    colours: TimelineColours,
     page_number: int = 1,
     total_pages: int = 1,
 ) -> None:
     if not events:
         raise CliError("No timeline events were supplied to renderer")
 
-    fig_height = max(min_height, len(events) * height_per_event)
-    fig, ax = plt.subplots(figsize=(width, fig_height))
+    margin = 50
+    line_x = 400
+    marker_size = 7
+    text_offset = 20
+    timestamp_width = 2
+    tactic_width = 325
+    tactic_height = 20
+    desc_width = 550
+    min_spacing = 100
 
-    fig.patch.set_facecolor("white")
-    ax.set_facecolor("white")
+    # Estimate wrapped activity height so long activities get more vertical room,
+    activity_heights = []
 
-    line_x = 0.12
-    ax.axvline(x=line_x, ymin=0, ymax=1, color="black", linewidth=2)
+    for event in events:
+        description = clean_text(event.activity, DESC_DISPLAY_MAX)
+        wrapped_lines = textwrap.wrap(description, width=85) or [""]
+        desc_height = len(wrapped_lines) * 16 + 10
 
-    for index, event in enumerate(events):
-        y_pos = 1.0 - (index / max(len(events), 1)) * 0.9
+        # Base row height:
+        # 30px for marker/timestamp/tactic row + wrapped description height.
+        row_height = 30 + desc_height
+        activity_heights.append(max(row_height, 60))
 
-        ax.plot(line_x, y_pos, "o", color="blue", markersize=8)
+    y_positions = [margin]
 
+    for index in range(1, len(events)):
+        previous_y = y_positions[-1]
+        previous_height = activity_heights[index - 1]
+        y_positions.append(previous_y + previous_height + 20)
+
+    canvas_height = max(
+        1000,
+        int(y_positions[-1] + activity_heights[-1] + margin),
+    )
+    canvas_width = 1100
+
+    # Convert the pixel-like canvas into a Matplotlib figure.
+    fig_width = width
+    fig_height = max(min_height, canvas_height / 100)
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    fig.patch.set_facecolor(colours.background)
+    ax.set_facecolor(colours.background)
+
+    # Draw the vertical timeline only over actual content.
+    line_start = y_positions[0]
+    line_end = y_positions[-1] + activity_heights[-1]
+
+    ax.plot(
+        [line_x, line_x],
+        [line_start, line_end],
+        color=colours.line,
+        linewidth=2,
+    )
+
+    for event, y_pos in zip(events, y_positions):
+        # Marker
+        ax.plot(
+            line_x,
+            y_pos,
+            "o",
+            color=colours.marker,
+            markersize=marker_size,
+        )
+
+        # Timestamp, left of the line.
         ax.text(
-            line_x - 0.045,
+            line_x - timestamp_width - text_offset,
             y_pos,
             format_timestamp(event.timestamp),
-            fontsize=8,
+            fontsize=10,
             ha="right",
             va="center",
-            color="red",
+            color=colours.timestamp,
             weight="bold",
             family="sans-serif",
         )
 
+        # Fixed-width tactic bar.
         tactic = clean_text(event.tactic, LABEL_MAX_CHARS)
+        tactic_x = line_x + text_offset
+        tactic_y = y_pos - 10
 
         ax.add_patch(
             plt.Rectangle(
-                (line_x + 0.012, y_pos - 0.012),
-                0.28,
-                0.024,
-                facecolor="darkorange",
+                (tactic_x, tactic_y),
+                tactic_width,
+                tactic_height,
+                facecolor=colours.bar,
                 edgecolor="none",
             )
         )
 
+        # Tactic text is left-aligned inside the fixed bar
         ax.text(
-            line_x + 0.152,
+            tactic_x + 5,
             y_pos,
             tactic,
-            fontsize=8,
-            ha="center",
+            fontsize=10,
+            ha="left",
             va="center",
-            color="white",
+            color=colours.bar_text,
             weight="bold",
             family="sans-serif",
         )
 
+        # Activity underneath the tactic bar.
         description = clean_text(event.activity, DESC_DISPLAY_MAX)
-        wrapped_description = "\n".join(textwrap.wrap(description, width=90)) if description else ""
+        wrapped_description = "\n".join(textwrap.wrap(description, width=85)) if description else ""
+
+        activity_x = line_x + text_offset
+        activity_y = y_pos + 15
 
         ax.text(
-            line_x + 0.31,
-            y_pos,
+            activity_x,
+            activity_y,
             wrapped_description,
-            fontsize=8,
+            fontsize=10,
             ha="left",
-            va="center",
+            va="top",
+            color=colours.text,
             family="sans-serif",
         )
 
     page_suffix = f" — page {page_number}/{total_pages}" if total_pages > 1 else ""
 
-    ax.set_xlim(-0.08, 1.0)
-    ax.set_ylim(0, 1.02)
+    ax.set_xlim(0, canvas_width)
+
+    # Invert Y so positive values go down the page.
+    ax.set_ylim(canvas_height, 0)
+
     ax.axis("off")
     ax.set_title(
         f"{title}{page_suffix}",
         fontsize=14,
         weight="bold",
         pad=20,
+        color=colours.title,
         family="sans-serif",
     )
 
     plt.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(output_path, format=output_format, dpi=dpi, bbox_inches="tight", facecolor="white")
+    plt.savefig(
+        output_path,
+        format=output_format,
+        dpi=dpi,
+        bbox_inches="tight",
+        facecolor=colours.background,
+    )
     plt.close(fig)
 
 
@@ -545,6 +649,7 @@ def render_outputs(
     min_height: float,
     height_per_event: float,
     dpi: int,
+    colours: TimelineColours,
 ) -> List[Path]:
     pages = chunk_events(events, page_size)
     total_pages = len(pages)
@@ -562,6 +667,7 @@ def render_outputs(
             height_per_event=height_per_event,
             dpi=dpi,
             output_format=output_format,
+            colours=colours,
             page_number=idx,
             total_pages=total_pages,
         )
@@ -729,6 +835,62 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--background-colour",
+        "--background-color",
+        default=DEFAULT_BACKGROUND_COLOUR,
+        help=f"Timeline background colour, default: {DEFAULT_BACKGROUND_COLOUR}",
+    )
+
+    parser.add_argument(
+        "--line-colour",
+        "--line-color",
+        default=DEFAULT_LINE_COLOUR,
+        help=f"Vertical timeline line colour, default: {DEFAULT_LINE_COLOUR}",
+    )
+
+    parser.add_argument(
+        "--marker-colour",
+        "--marker-color",
+        default=DEFAULT_MARKER_COLOUR,
+        help=f"Timeline marker colour, default: {DEFAULT_MARKER_COLOUR}",
+    )
+
+    parser.add_argument(
+        "--timestamp-colour",
+        "--timestamp-color",
+        default=DEFAULT_TIMESTAMP_COLOUR,
+        help=f"Timestamp text colour, default: {DEFAULT_TIMESTAMP_COLOUR}",
+    )
+
+    parser.add_argument(
+        "--bar-colour",
+        "--bar-color",
+        default=DEFAULT_BAR_COLOUR,
+        help=f"Category/tactic bar colour, default: {DEFAULT_BAR_COLOUR}",
+    )
+
+    parser.add_argument(
+        "--bar-text-colour",
+        "--bar-text-color",
+        default=DEFAULT_BAR_TEXT_COLOUR,
+        help=f"Category/tactic bar text colour, default: {DEFAULT_BAR_TEXT_COLOUR}",
+    )
+
+    parser.add_argument(
+        "--text-colour",
+        "--text-color",
+        default=DEFAULT_TEXT_COLOUR,
+        help=f"Activity text colour, default: {DEFAULT_TEXT_COLOUR}",
+    )
+
+    parser.add_argument(
+        "--title-colour",
+        "--title-color",
+        default=DEFAULT_TITLE_COLOUR,
+        help=f"Title text colour, default: {DEFAULT_TITLE_COLOUR}",
+    )
+
+    parser.add_argument(
         "--stats",
         action="store_true",
         help="Print row processing statistics",
@@ -772,6 +934,20 @@ def validate_args(args: argparse.Namespace) -> None:
     if args.dpi <= 0:
         raise CliError("--dpi must be greater than zero")
 
+    colour_options = {
+        "--background-colour": args.background_colour,
+        "--line-colour": args.line_colour,
+        "--marker-colour": args.marker_colour,
+        "--timestamp-colour": args.timestamp_colour,
+        "--bar-colour": args.bar_colour,
+        "--bar-text-colour": args.bar_text_colour,
+        "--text-colour": args.text_colour,
+        "--title-colour": args.title_colour,
+    }
+
+    for option_name, colour_value in colour_options.items():
+        validate_colour(colour_value, option_name)
+
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
@@ -811,6 +987,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         require_columns(headers, required_columns)
 
         visualize_values = parse_visualize_values(args.visualize_value)
+
+        colours = TimelineColours(
+            background=args.background_colour,
+            line=args.line_colour,
+            marker=args.marker_colour,
+            timestamp=args.timestamp_colour,
+            bar=args.bar_colour,
+            bar_text=args.bar_text_colour,
+            text=args.text_colour,
+            title=args.title_colour,
+        )
 
         rows = load_rows(args.input, args.sheet)
 
@@ -860,6 +1047,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 min_height=args.min_height,
                 height_per_event=args.height_per_event,
                 dpi=args.dpi,
+                colours=colours,
             )
 
             if len(written_paths) == 1:
