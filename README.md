@@ -13,6 +13,7 @@ The tool reads timestamped activity rows, sorts them chronologically, and render
 - Handles ISO-8601 / Zulu timestamps such as `2026-06-23T00:31:53.2971736Z`
 - Strips fractional seconds from displayed timestamps
 - Optional row filtering using a configurable column
+- Configurable colours for timeline elements
 - Useful diagnostics for sheets, columns, skipped rows, and parsing errors
 
 ## Requirements
@@ -228,6 +229,80 @@ Output: 2026-06-23 00:31:53
 | `--stats` | Print row processing statistics |
 | `-v, --verbose` | Print detailed warnings |
 
+## Colour Options
+
+Timeline CLI supports configurable colours for the main timeline elements.
+
+Both British and US spellings are supported, for example `--bar-colour` and `--bar-color`.
+
+| Option | Description | Default |
+|---|---|---|
+| `--background-colour`, `--background-color` | Timeline background colour | `white` |
+| `--line-colour`, `--line-color` | Vertical timeline line colour | `black` |
+| `--marker-colour`, `--marker-color` | Timeline marker/dot colour | `blue` |
+| `--timestamp-colour`, `--timestamp-color` | Timestamp text colour | `red` |
+| `--bar-colour`, `--bar-color` | Tactic/category bar colour | `darkorange` |
+| `--bar-text-colour`, `--bar-text-color` | Tactic/category bar text colour | `white` |
+| `--text-colour`, `--text-color` | Activity text colour | `black` |
+| `--title-colour`, `--title-color` | Timeline title colour | `black` |
+
+Colours can be Matplotlib named colours, such as:
+
+```text
+red
+black
+blue
+darkorange
+white
+```
+
+Or hex colour values, such as:
+
+```text
+#111111
+#ff6666
+#2563eb
+#ffffff
+```
+
+## Colour Examples
+
+Default-style colours:
+
+```cmd
+python timeline_cli.py sample.xlsx -o timeline_default.svg --format svg --background-colour white --line-colour black --marker-colour blue --timestamp-colour red --bar-colour darkorange --bar-text-colour white --text-colour black --title-colour black
+```
+
+Dark theme:
+
+```cmd
+python timeline_cli.py sample.xlsx -o timeline_dark.svg --format svg --background-colour "#111111" --line-colour "#dddddd" --marker-colour "#66ccff" --timestamp-colour "#ff6666" --bar-colour "#cc6600" --bar-text-colour "#ffffff" --text-colour "#eeeeee" --title-colour "#ffffff"
+```
+
+Blue report style:
+
+```cmd
+python timeline_cli.py sample.xlsx -o timeline_blue.svg --format svg --background-colour "#ffffff" --line-colour "#1f2937" --marker-colour "#2563eb" --timestamp-colour "#1d4ed8" --bar-colour "#2563eb" --bar-text-colour "#ffffff" --text-colour "#111827" --title-colour "#111827"
+```
+
+High-contrast style:
+
+```cmd
+python timeline_cli.py sample.xlsx -o timeline_high_contrast.svg --format svg --background-colour "#ffffff" --line-colour "#000000" --marker-colour "#000000" --timestamp-colour "#b00020" --bar-colour "#000000" --bar-text-colour "#ffffff" --text-colour "#000000" --title-colour "#000000"
+```
+
+Purple and teal style:
+
+```cmd
+python timeline_cli.py sample.xlsx -o timeline_purple_teal.svg --format svg --background-colour "#faf5ff" --line-colour "#6b21a8" --marker-colour "#0f766e" --timestamp-colour "#7e22ce" --bar-colour "#0f766e" --bar-text-colour "#ffffff" --text-colour "#1f2937" --title-colour "#581c87"
+```
+
+PNG dark theme:
+
+```cmd
+python timeline_cli.py sample.xlsx -o timeline_dark.png --format png --background-colour "#111111" --line-colour "#dddddd" --marker-colour "#66ccff" --timestamp-colour "#ff6666" --bar-colour "#cc6600" --bar-text-colour "#ffffff" --text-colour "#eeeeee" --title-colour "#ffffff"
+```
+
 ## Examples
 
 Generate a standard timeline:
@@ -314,16 +389,17 @@ Use `--page-size`:
 python timeline_cli.py sample.xlsx -o timeline.png --page-size 50
 ```
 
+
+## Licence
+
+Timeline CLI is licensed under the GNU General Public License version 3.0.
+
 ## Attribution
 
-Timeline CLI includes code adapted from Kanvas by WithSecureLabs.
+Portions of the original timeline rendering approach were adapted from Kanvas by WithSecureLabs.
 
 Kanvas is licensed under the GNU General Public License version 3.0.
+
 This project is also licensed under the GNU General Public License version 3.0.
 
-Relevant changes include extracting and simplifying the timeline image generation
-logic into a standalone command-line tool, removing Kanvas-specific application
-dependencies, adding CSV input, SVG output, JSON export, paging, and standalone
-timestamp parsing.
-
-Modified: 2026-06-25
+Relevant changes include extracting and simplifying the timeline image generation logic into a standalone command-line tool, removing Kanvas-specific application dependencies, adding CSV input, SVG output, JSON export, paging, configurable colours, and standalone timestamp parsing.
